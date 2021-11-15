@@ -1,12 +1,34 @@
-from constants import sbox, inv_sbox, mix_matrix, inv_mix_matrix
+import os
+from constants import mix_matrix, inv_mix_matrix
 
 
-def look_up(byte, inverse=False):
-    # 4 MSB
-    x = byte >> 4
-    # 4 LSB
-    y = byte & 0x0F
-    return sbox[x][y] if not inverse else inv_sbox[x][y]
+def random_key_generator(key_length):
+    return bytes.hex(os.urandom(key_length // 8))
+
+
+def random_iv_generator(iv_length):
+    return bytes.hex(os.urandom(iv_length))
+
+
+def text2matrix(text, len=16):
+    state = []
+    for i in range(len):
+        byte = int(text[i * 2:i * 2 + 2], 16)
+        if i % 4 == 0:
+            state.append([byte])
+        else:
+            state[i // 4].append(byte)
+
+    return state
+
+
+def matrix2text(s, len=16):
+    text = ""
+    for i in range(len // 4):
+        for j in range(4):
+            text += format(s[i][j], '02x')
+
+    return text
 
 
 def ff_multiply(a, b):
@@ -32,51 +54,27 @@ def mult_matrix(a0, a1, a2, a3, inverse):
     return b
 
 
-def byte_list_to_word(byte_list):
-    word = 0
-    for byte in byte_list:
-        word = (word << 8) + byte
-    return word
+def xtime(b):
+    if b & 0x80:
+        b = b << 1
+        b ^= 0x1B
+    else:
+        b = b << 1
+
+    return b & 0xFF
 
 
-def word_to_byte_list(word):
-    byte_list = []
-    for i in range(4):
-        byte = word & 0xff
-        byte_list.append(byte)
-        word >>= 8
-    byte_list.reverse()
-    return byte_list
+def add_PKCS5_padding(block, block_length):
+    bytes_to_pad = block_length - len(block) // 2
+    for _ in range(bytes_to_pad):
+        block += format(bytes_to_pad, '02x')
+    return block
 
 
-def xtime(a):
-    # left shift by 1 and apply bitmask (8bits)
-    b = a << 1 & 0xff
-    # if leftmost bit is 1, then XOR with 0x1b
-    if a >> 7 == 1:
-        b ^= 0x1b
-    return b
+def unpad(block):
+    bytes_to_unpad = int(block[-2:], 16)
+    return block[:-bytes_to_unpad * 2]
 
 
-def transpose(lst):
-    return [[row[i] for row in lst] for i in range(len(lst[0]))]
-
-
-def to_matrix(state):
-    state = [state[i:i+4] for i in range(0, len(state), 4)]
-    state = transpose(state)
-    return state
-
-
-def to_list(state):
-    state = transpose(state)
-    state = sum(state, [])
-    return state
-
-
-def words_to_key(w, a, b):
-    result = []
-    for i in range(a, b + 1):
-        temp = word_to_byte_list(w[i])
-        result += temp
-    return result
+def xor_hex_blocks(block_1, block_2):
+    return format(int(block_1, 16) ^ int(block_2, 16), '032x')
